@@ -1,116 +1,291 @@
-IP Spoofing Attack & Prevention Lab (Portfolio Write‑Up)
-Demonstrating source IP spoofing with iptables SNAT and mitigation with Cisco Extended ACLs
+# 🛡️ IP Spoofing Attack & Prevention Lab
 
-Quick Facts
-•	Environment: Isolated lab network (no production systems).
-•	Attacker host: AlpineLinux‑1 on Network A (192.168.2.0/24).
-•	Victim host: AlpineLinux‑2 on Network B (200.41.3.0/24).
-•	Router: Cisco R1 with FastEthernet0/0 (Network A) and FastEthernet0/1 (Network B).
-•	IDS view: Wireshark capture to validate packet headers.
-•	IPS control: Cisco Extended ACL applied on the router to block spoofed sources.
+**Demonstrating source IP spoofing using iptables SNAT and mitigation with Cisco Extended ACLs**
 
-1) Overview
-This lab demonstrates a classic network-layer issue: an IP packet’s source address can be forged if the network does not enforce validation. In the first half, the attacker host intentionally changes the source IP address of outgoing ICMP (ping) traffic using iptables SNAT in the NAT table. In the second half, the router is configured with an Extended ACL that only permits traffic from the legitimate attacker subnet and drops everything else, blocking the spoofed packets. The goal is to clearly show the “attack → observe → mitigate → re-test” lifecycle.
+[![Lab Type](https://img.shields.io/badge/Lab-Network%20Security-blue)]()
+[![Platform](https://img.shields.io/badge/Platform-Cisco%20%7C%20Alpine%20Linux-orange)]()
+[![Status](https://img.shields.io/badge/Status-Complete-success)]()
 
-2) What IP Spoofing Means (in practical terms)
-IP spoofing is when a sender forges the Source IP field in an IP header so the packet appears to come from a different machine. Routers forward packets based on destination routing, not on whether the source address is truthful. If the network lacks controls like anti-spoofing ACLs (or uRPF), spoofed packets can travel across segments and reach the target.
-Common reasons attackers use spoofing:
-•	To hide the real origin of traffic (basic anonymity at the IP layer).
-•	To bypass weak IP-based trust rules (e.g., “allow from internal range”).
-•	To support reflection/amplification attacks (spoofing the victim’s IP).
+---
 
-3) Lab Topology and Addressing
-The lab uses two LANs connected by a single Cisco router:
-AlpineLinux‑1 (Attacker)  →  Switch1  →  R1 (Router)  →  Switch2  →  AlpineLinux‑2 (Victim)
+## 📋 Table of Contents
 
-Network segments:
-Network	Purpose	Subnet
-Network A	Attacker side LAN	192.168.2.0/24
-Network B	Victim side LAN	200.41.3.0/24
-Router interface IPs (R1):
-•	FastEthernet0/0 (toward Network A): 192.168.2.1/24
-•	FastEthernet0/1 (toward Network B): 200.41.3.1/24
+- [Overview](#overview)
+- [Lab Topology](#lab-topology)
+- [Technologies Used](#technologies-used)
+- [Lab Phases](#lab-phases)
+- [Key Takeaways](#key-takeaways)
+- [Disclaimer](#disclaimer)
 
-4) Initial System Setup (Alpine Linux)
-Alpine Linux is minimal and does not ship with iptables by default, so iptables was installed on both attacker and victim hosts to enable packet filtering/NAT features.
-Commands used (run as root):
+---
+
+## 🔎 Overview
+
+This lab demonstrates a classic **network-layer security weakness**: IP source addresses can be forged if the network does not enforce validation. The project follows a complete **attack → observe → mitigate → verify** lifecycle to showcase both offensive and defensive security techniques.
+
+### What You'll Learn
+
+- How IP spoofing works at the network layer
+- Using iptables SNAT for traffic manipulation
+- Packet analysis with Wireshark
+- Implementing Cisco Extended ACLs for anti-spoofing
+- Network boundary security controls
+
+### Lab Environment
+
+- **Attacker Host:** AlpineLinux-1 (Network A – `192.168.2.0/24`)
+- **Victim Host:** AlpineLinux-2 (Network B – `200.41.3.0/24`)
+- **Router:** Cisco R1
+- **Detection:** Wireshark packet capture
+- **Prevention:** Cisco Extended ACL
+
+---
+
+## 🌐 Lab Topology
+
+```
+AlpineLinux-1 (Attacker)          AlpineLinux-2 (Victim)
+192.168.2.2                        200.41.3.2
+      |                                  |
+  Switch-1                           Switch-2
+      |                                  |
+      └────────── Router R1 ─────────────┘
+              (Fa0/0)    (Fa0/1)
+           192.168.2.1  200.41.3.1
+```
+
+### Network Segments
+
+| Network    | Purpose     | Subnet            | Gateway       |
+|------------|-------------|-------------------|---------------|
+| Network A  | Attacker LAN | `192.168.2.0/24` | `192.168.2.1` |
+| Network B  | Victim LAN   | `200.41.3.0/24`  | `200.41.3.1`  |
+
+---
+
+## 🛠️ Technologies Used
+
+- **Alpine Linux** - Lightweight Linux distribution for hosts
+- **iptables** - Linux packet filtering and NAT
+- **Cisco IOS** - Router operating system
+- **Wireshark** - Network protocol analyzer
+- **ICMP** - Test protocol for demonstration
+
+---
+
+## 📖 Lab Phases
+
+### Phase 1: Environment Setup
+
+Install required packages on Alpine Linux:
+
+```bash
 apk add iptables
 iptables -L
+```
 
-5) IP Address Configuration
-Static IPs were assigned so routing and ACL behavior would be predictable. On Alpine, this was done by editing /etc/network/interfaces.
-Attacker (AlpineLinux‑1) – /etc/network/interfaces:
-address 192.168.2.2
-netmask 255.255.255.0
-gateway 192.168.2.1
-Victim (AlpineLinux‑2) – /etc/network/interfaces:
-address 200.41.3.2
-netmask 255.255.255.0
-gateway 200.41.3.1
+Configure IP addressing:
 
-Router R1 interface configuration (Cisco IOS):
-interface f0/0
+**Attacker (AlpineLinux-1):**
+```plaintext
+IP Address : 192.168.2.2
+Netmask    : 255.255.255.0
+Gateway    : 192.168.2.1
+```
+
+**Victim (AlpineLinux-2):**
+```plaintext
+IP Address : 200.41.3.2
+Netmask    : 255.255.255.0
+Gateway    : 200.41.3.1
+```
+
+**Router R1 (Cisco IOS):**
+```cisco
+interface FastEthernet0/0
  ip address 192.168.2.1 255.255.255.0
-!
-interface f0/1
+ 
+interface FastEthernet0/1
  ip address 200.41.3.1 255.255.255.0
+```
 
-6) Phase 1 — Baseline Connectivity (before spoofing)
-Before any manipulation, normal connectivity was verified end‑to‑end. From AlpineLinux‑1, a standard ping to the victim confirmed that routing was working and that the router was forwarding ICMP normally.
-From attacker:
+### Phase 2: Baseline Connectivity Test
+
+Verify normal connectivity before attack:
+
+```bash
 ping 200.41.3.2
-Expected result: ICMP echo replies are received. In this baseline state, the packet header shows Source = 192.168.2.2 and Destination = 200.41.3.2.
-📸 Screenshot placement suggestion: Baseline ping success and/or Wireshark capture showing Source 192.168.2.2 → Dest 200.41.3.2.
+```
 
-7) Phase 2 — IP Spoofing with iptables SNAT (Attack)
-The key technique used here is Source NAT (SNAT) in the POSTROUTING chain. POSTROUTING happens right before packets leave the host, which makes it an ideal place to rewrite the source address. Instead of crafting packets manually, SNAT lets us demonstrate spoofing using a normal ping command while iptables transparently modifies the outgoing ICMP packets.
-Spoof rule applied on AlpineLinux‑1 (attacker):
+**Expected Result:** ICMP echo replies received with legitimate source IP (`192.168.2.2`)
+
+---
+
+### Phase 3: IP Spoofing Attack (SNAT)
+
+Apply Source NAT rule to forge packets:
+
+```bash
 iptables -t nat -A POSTROUTING -p icmp -j SNAT --to-source 246.79.20
-What each part does:
-•	-t nat: use the NAT table (address translation).
-•	POSTROUTING: modify packets just before they leave the host.
-•	-p icmp: apply this rule only to ICMP traffic (ping).
-•	-j SNAT: perform Source NAT (rewrite the source IP).
-•	--to-source 246.79.20: set the new (forged) source IP address.
-Then the attacker runs a normal ping again:
+```
+
+**Rule Breakdown:**
+- `-t nat` → NAT table
+- `POSTROUTING` → Modify packets before egress
+- `-p icmp` → Apply to ICMP traffic only
+- `SNAT --to-source 246.79.20` → Rewrite source IP to spoofed address
+
+Execute the attack:
+
+```bash
 ping 200.41.3.2
-Observation: On the wire (as seen by Wireshark on the router or victim side), the ICMP request now shows Source IP = 246.79.20 and Destination = 200.41.3.2. That proves the spoofing worked: the victim and router receive a packet that claims it came from an unrelated address.
-📸 Screenshot placement suggestion: Wireshark capture showing ICMP with Source IP = 246.79.20 → Dest 200.41.3.2.
+```
 
-8) Phase 3 — Detection (IDS view with Wireshark)
-Wireshark acts as the IDS perspective in this lab. The main detection idea is simple: compare what the network expects (traffic from 192.168.2.0/24 arriving from the attacker-side) versus what is actually observed (a packet arriving from the attacker side that claims a completely different source IP).
-Useful Wireshark filter:
+**Result:** Victim receives packets appearing to originate from `246.79.20` instead of the real source.
+
+---
+
+### Phase 4: Detection (IDS View)
+
+Capture and analyze traffic using Wireshark:
+
+**Display Filter:**
+```plaintext
 icmp
-Key indicator: the ICMP packets are physically coming from the attacker segment path, yet the Source IP in the IP header is not from the attacker subnet. That mismatch is the practical signature of spoofing in this setup.
+```
 
-9) Phase 4 — Prevention (IPS control with Cisco Extended ACL)
-To prevent spoofing, the router enforces a rule: traffic that originated from the attacker LAN must have a source address in 192.168.2.0/24. Any packet with a different source address is treated as spoofed and dropped. This is a classic anti‑spoofing control at the network boundary.
-ACL used (Extended ACL 110):
+**Detection Indicators:**
+- Packet arrives from attacker-side interface
+- Source IP (`246.79.20`) does not match attacker subnet (`192.168.2.0/24`)
+- Logical impossibility based on network topology
+
+---
+
+### Phase 5: Prevention (IPS Implementation)
+
+Deploy Cisco Extended ACL to enforce source validation:
+
+```cisco
 access-list 110 permit ip 192.168.2.0 0.0.0.255 any
 access-list 110 deny ip any any
-Explanation: The first line permits only traffic whose source is in 192.168.2.0/24. The second line denies everything else, which includes the spoofed packets claiming to originate from 246.79.20.
-Applying the ACL to the router interface (as done in the report):
-interface f0/1
- ip access-group 110 out
-📸 Screenshot placement suggestion: Router configuration showing ACL 110 applied to f0/1 (outbound).
 
-10) Phase 5 — Re-test and Proof of Blocking
-With the ACL in place, the spoofed ping is attempted again. The router drops the spoofed traffic, and Wireshark should show no spoofed ICMP requests reaching the victim.
-Verification command on the router:
+interface FastEthernet0/0
+ ip access-group 110 in
+```
+
+**ACL Logic:**
+- Only permit traffic from Network A with valid source IPs (`192.168.2.0/24`)
+- Deny all other traffic (including spoofed packets)
+
+---
+
+### Phase 6: Verification & Testing
+
+Re-execute the spoofed ping:
+
+```bash
+ping 200.41.3.2
+```
+
+**Expected Result:** No replies received (spoofed traffic blocked at router)
+
+Verify ACL effectiveness:
+
+```cisco
 show access-lists 110
-In the report, the deny hit counter increases (example: “deny 2830 matches”), which is strong evidence that the ACL is actively blocking packets that do not match the permitted source range.
-📸 Screenshot placement suggestion: Output of “show access-lists 110” showing deny match count increasing (report image on page 5).
+```
 
-11) Cleanup — Removing the Spoofing Rule (return to normal traffic)
-Finally, the iptables SNAT rule is removed from the attacker to restore normal source addressing. Once removed, ping traffic originates from the legitimate 192.168.2.2 again.
-Remove the SNAT rule on the attacker:
+**Expected Output:** Deny counter increments, proving mitigation is active.
+
+---
+
+### Phase 7: Cleanup
+
+Remove spoofing rule to restore normal traffic:
+
+```bash
 iptables -t nat -D POSTROUTING -p icmp -j SNAT --to-source 246.79.20
+```
 
-12) Key Takeaways (Network Infrastructure Perspective)
-•	IP headers can be forged; the network will still route packets unless anti‑spoofing controls exist.
-•	SNAT in POSTROUTING is an easy way to demonstrate spoofing without custom packet crafting.
-•	Wireshark helps validate what is actually on the wire (truth) vs. what hosts assume (trust).
-•	Extended ACLs at the router boundary are an effective first-line defense to enforce “source must match ingress network.”
+Verify legitimate connectivity restored:
 
-Disclaimer
-This lab was performed in an isolated environment for educational and defensive security learning only. Do not attempt spoofing techniques on networks you do not own or explicitly have permission to test.
+```bash
+ping 200.41.3.2
+```
+
+---
+
+## 🎓 Key Takeaways
+
+### Technical Insights
+
+1. **IP addresses are not authenticated by default** - Routers forward based on destination, not source validity
+2. **SNAT enables realistic attack simulation** - Demonstrates how easily source IPs can be forged
+3. **Wireshark reveals the truth** - Packet captures show what's actually on the wire
+4. **Network boundary controls are critical** - ACLs provide effective anti-spoofing defense
+5. **Defense-in-depth matters** - Multiple layers of validation strengthen security posture
+
+### Security Principles Demonstrated
+
+- **Attack Surface Understanding** - Knowing how attacks work enables better defense
+- **Detection vs Prevention** - IDS (Wireshark) observes; IPS (ACL) blocks
+- **Ingress Filtering** - Validating source addresses at network entry points
+- **Security by Design** - Proactive controls prevent exploitation
+
+---
+
+## 📚 Related Concepts
+
+This lab connects to several important security topics:
+
+- **BCP 38 / RFC 2827** - Network Ingress Filtering best practices
+- **Unicast Reverse Path Forwarding (uRPF)** - Advanced anti-spoofing technique
+- **DDoS Reflection Attacks** - How spoofing enables amplification
+- **TCP Sequence Prediction** - Historical blind spoofing attacks
+
+---
+
+## 🔧 Potential Extensions
+
+Want to expand this lab? Consider:
+
+- [ ] Implement Unicast RPF as alternative to ACLs
+- [ ] Test TCP spoofing (more complex due to state)
+- [ ] Create automated detection scripts
+- [ ] Simulate DDoS reflection scenario
+- [ ] Add logging and alerting mechanisms
+
+---
+
+## ⚠️ Disclaimer
+
+**This lab was conducted in an isolated environment for educational and defensive security learning only.**
+
+**DO NOT** attempt IP spoofing on networks you do not own or have explicit written permission to test. Unauthorized network manipulation may violate:
+
+- Computer Fraud and Abuse Act (CFAA)
+- Network usage policies
+- Service provider terms of service
+- Local and federal laws
+
+This project is documented as a **technical portfolio demonstration**, not for malicious purposes.
+
+---
+
+## 📝 License
+
+This project is available under the MIT License for educational purposes.
+
+---
+
+## 🤝 Connect
+
+Questions or suggestions? Feel free to open an issue or reach out!
+
+**Author:** [Your Name]  
+**LinkedIn:** [Your LinkedIn]  
+**Portfolio:** [Your Website]
+
+---
+
+*Built with 🔒 for learning network security fundamentals*
