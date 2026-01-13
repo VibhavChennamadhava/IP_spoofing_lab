@@ -8,17 +8,6 @@
 
 ---
 
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Lab Topology](#lab-topology)
-- [Technologies Used](#technologies-used)
-- [Lab Phases](#lab-phases)
-- [Key Takeaways](#key-takeaways)
-- [Disclaimer](#disclaimer)
-
----
-
 ## 🔎 Overview
 
 This lab demonstrates a classic **network-layer security weakness**: IP source addresses can be forged if the network does not enforce validation. The project follows a complete **attack → observe → mitigate → verify** lifecycle to showcase both offensive and defensive security techniques.
@@ -282,10 +271,11 @@ This project is available under the MIT License for educational purposes.
 
 Questions or suggestions? Feel free to open an issue or reach out!
 
-**Author:** [Your Name]  
-**LinkedIn:** [Your LinkedIn]  
-**Portfolio:** [Your Website]
+**Author:** [Vibhav Chennamadhava]  
+**LinkedIn:** [https://www.linkedin.com/in/vibhav-chennamadhava-61184b190/]  
+**Portfolio:** [https://vibhavchennamadhava.github.io/]
 
 ---
 
 *Built with 🔒 for learning network security fundamentals*
+
