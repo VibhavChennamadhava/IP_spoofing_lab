@@ -12,7 +12,7 @@
 
 This lab demonstrates a classic **network-layer security weakness**: IP source addresses can be forged if the network does not enforce validation. The project follows a complete **attack → observe → mitigate → verify** lifecycle to showcase both offensive and defensive security techniques.
 
-### What You'll Learn
+### What I have Learned
 
 - How IP spoofing works at the network layer
 - Using iptables SNAT for traffic manipulation
@@ -231,18 +231,6 @@ This lab connects to several important security topics:
 - **Unicast Reverse Path Forwarding (uRPF)** - Advanced anti-spoofing technique
 - **DDoS Reflection Attacks** - How spoofing enables amplification
 - **TCP Sequence Prediction** - Historical blind spoofing attacks
-
----
-
-## 🔧 Potential Extensions
-
-Want to expand this lab? Consider:
-
-- [ ] Implement Unicast RPF as alternative to ACLs
-- [ ] Test TCP spoofing (more complex due to state)
-- [ ] Create automated detection scripts
-- [ ] Simulate DDoS reflection scenario
-- [ ] Add logging and alerting mechanisms
 
 ---
 
